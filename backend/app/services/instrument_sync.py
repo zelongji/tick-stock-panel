@@ -85,14 +85,20 @@ def sync_instruments(data_dir: Path) -> int:
         # 免费接口的限价来自历史行情，不能盖上同步日期当作当日权威价。
         current_limits = tf_client.current_mode() == "api_key"
         all_rows = []
+        failed_exchanges = []
         for ex in _EXCHANGES:
             try:
                 items = tf.exchanges.get_instruments(ex, instrument_type="stock")
                 if items:
                     all_rows.extend(_flatten_instruments(items, current_limits=current_limits))
                     logger.info("instruments %s: %d stocks", ex, len(items))
-            except Exception as e:
+                else:
+                    failed_exchanges.append(ex)
+            except Exception as e:  # noqa: BLE001 -- 记录失败，禁止写入不完整快照
+                failed_exchanges.append(ex)
                 logger.warning("get_instruments(%s) failed: %s", ex, e)
+        if failed_exchanges:
+            raise RuntimeError("证券维表同步不完整，保留原文件；失败交易所: " + ",".join(failed_exchanges))
 
     if not all_rows:
         return 0
